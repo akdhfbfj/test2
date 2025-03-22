@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>테트리스 (라인 애니메이션으로 위 블록이 떨어지는 예시)</title>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
+      padding: 20px;
+      font-family: sans-serif;
+    }
+    canvas {
+      border: 1px solid #000;
+      background: #f0f0f0;
+    }
+    #scoreBoard {
+      margin: 10px 0;
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+  <h1>테트리스 - 줄 삭제 시 애니메이션</h1>
+  <canvas id="gameCanvas" width="240" height="480"></canvas>
+  <div id="scoreBoard">점수: <span id="score">0</span></div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const blockSize = 24;  // 블록 한 칸 크기
+    const boardWidth = 10; // 10칸
+    const boardHeight = 20;// 20칸
+
+    // 보드 (0이면 빈칸, 문자열이면 색상)
+    let board = Array.from({length: boardHeight}, () => new Array(boardWidth).fill(0));
+
+    // 테트로미노 정의 (생략 가능, 혹은 기존 코드를 가져오면 됩니다)
+    const tetrominoes = [
+      // I 블록, O 블록, T, S, Z, J, L ...
+      // 여기서는 예시로 간략화 또는 그대로 사용
+      // ... (기존 테트로미노 정의)
+    ];
+    const colors = ['red','blue','green','purple','orange','cyan','magenta'];
+
+    // 현재 조작중인 블록
+    let currentTetromino, currentColor;
+    let currentX, currentY, currentRotation;
+
+    let score = 0;
+    let isAnimating = false; // 줄이 내려오는 애니메이션 중인지 여부
+
+    function generateNewTetromino() {
+      const idx = Math.floor(Math.random() * tetrominoes.length);
+      currentTetromino = tetrominoes[idx];
+      currentColor = colors[idx];
+      currentRotation = 0;
+      currentX = Math.floor(boardWidth/2)-2;
+      currentY = 0;
+    }
+
+    function drawBoard() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 보드에 쌓인 블록들
+      for(let row=0; row<boardHeight; row++){
+        for(let col=0; col<boardWidth; col++){
+          if(board[row][col] !== 0){
+            ctx.fillStyle = board[row][col];
+            ctx.fillRect(col*blockSize, row*blockSize, blockSize, blockSize);
+            ctx.strokeRect(col*blockSize, row*blockSize, blockSize, blockSize);
+          }
+        }
+      }
+
+      // 현재 블록 (애니메이션 중일 땐 멈춤)
+      if(!isAnimating){
+        const shape = currentTetromino[currentRotation];
+        for(let r=0; r<shape.length; r++){
+          for(let c=0; c<shape[r].length; c++){
+            if(shape[r][c]){
+              ctx.fillStyle = currentColor;
+              ctx.fillRect((currentX+c)*blockSize, (currentY+r)*blockSize, blockSize, blockSize);
+              ctx.strokeRect((currentX+c)*blockSize, (currentY+r)*blockSize, blockSize, blockSize);
+            }
+          }
+        }
+      }
+    }
+
+    // 충돌 판정
+    function collision(nx, ny, nr) {
+      const shape = currentTetromino[nr];
+      for(let r=0; r<shape.length; r++){
+        for(let c=0; c<shape[r].length; c++){
+          if(shape[r][c]){
+            let x = nx + c;
+            let y = ny + r;
+            if(x<0 || x>=boardWidth || y>=boardHeight) return true;
+            if(y>=0 && board[y][x] !== 0) return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    // 보드에 블록 고정
+    function lockTetromino() {
+      const shape = currentTetromino[currentRotation];
+      for(let r=0; r<shape.length; r++){
+        for(let c=0; c<shape[r].length; c++){
+          if(shape[r][c]){
+            if(currentY + r < 0){
+              alert('게임 오버!');
+              resetBoard();
+              return;
+            }
+            board[currentY + r][currentX + c] = currentColor;
+          }
+        }
+      }
+      clearLines();
+    }
+
+    // 줄이 가득 찼는지 체크
+    function clearLines() {
+      let linesToRemove = [];
+      for(let row=0; row<boardHeight; row++){
+        if(board[row].every(cell => cell !== 0)){
+          linesToRemove.push(row);
+        }
+      }
+      if(linesToRemove.length>0){
+        // 애니메이션 있는 제거
+        removeLinesWithAnimation(linesToRemove);
+      } else {
+        drawBoard();
+      }
+    }
+
+    // '자연스럽게 떨어지는' 애니메이션 구현 예시
+    function removeLinesWithAnimation(rows) {
+      // 1) 삭제 전 oldBoard 상태 저장
+      let oldBoard = board.map(row => row.slice());
+
+      // 2) 실제로 줄 삭제 (최종 상태 newBoard)
+      rows.sort((a,b) => a-b);
+      let linesRemoved = 0;
+      rows.forEach(rowIdx => {
+        for(let r=rowIdx; r>0; r--){
+          board[r] = board[r-1].slice();
+        }
+        board[0] = new Array(boardWidth).fill(0);
+        linesRemoved++;
+      });
+      score += linesRemoved*10;
+      updateScore();
+
+      let newBoard = board.map(row => row.slice());
+
+      // 3) 일단 board를 다시 oldBoard로 되돌려놓고,
+      //    oldBoard에서 newBoard로 이동하는 애니메이션 시작
+      board = oldBoard.map(row => row.slice());
+      isAnimating = true;
+
+      let frames = 10; // 몇 프레임(혹은 단계)으로 떨어뜨릴지
+      let currentFrame = 0;
+
+      // 떨어질 거리 계산하기
+      //  예: 어떤 셀이 row=5에 있고, 최종 상태에서 row=7로 내려갔다면 => 2줄 차이
+      //      애니메이션 중에 0.2초씩 점점 이동
+      // 각 셀마다 최종 위치를 계산하려면, newBoard와 oldBoard를 비교
+      // 여기선 row 별로 '몇 줄 아래로 이동했는가'를 찾는 식으로 단순화해도 됨
+
+      let dropMap = []; 
+      for(let r=0; r<boardHeight; r++){
+        dropMap[r] = 0;
+      }
+      // rows 각각 제거됐으니, 그 위의 줄들은 rows.length 만큼 내려감
+      // 하지만 여러 줄이 제거되면, 위쪽 row가 더 많이 내려가는 식의 계산이 필요
+      // 간단히는: row 중 removed line보다 위에 있는 row는 linesRemoved만큼 이동
+      // 정확히는 Tetris 표준도 row마다 1칸씩 이동을 반복하는 형태지만,
+      // 여기서는 전체 누적을 한 번에 계산
+      rows.forEach(removedRow => {
+        // removedRow보다 위에 있는 row들은 +1
+        for(let r=0; r<removedRow; r++){
+          dropMap[r] = (dropMap[r]||0) + 1;
+        }
+      });
+
+      // 이제 dropMap[r]만큼 row r이 아래로 이동한다.
+      // => 애니메이션 중 currentY = r + (dropMap[r] * progress)
+
+      let animTimer = setInterval(()=>{
+        currentFrame++;
+        let progress = currentFrame/frames; // 0~1로 변함
+        drawFallingBoard(oldBoard, dropMap, progress);
+        if(currentFrame >= frames){
+          clearInterval(animTimer);
+          // 애니메이션 완료 후 board를 최종 상태로
+          board = newBoard.map(row => row.slice());
+          isAnimating = false;
+          drawBoard();
+        }
+      }, 30); // 30ms 간격 => 약 0.3초 걸림
+    }
+
+    // 애니메이션 그리기
+    function drawFallingBoard(oldB, dropMap, progress) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for(let row=0; row<boardHeight; row++){
+        for(let col=0; col<boardWidth; col++){
+          let color = oldB[row][col];
+          if(color !== 0){
+            // 최종적으로 dropMap[row]만큼 아래로 이동
+            let yFloat = row + dropMap[row]*progress;
+            let drawY = yFloat * blockSize;
+            let drawX = col * blockSize;
+            ctx.fillStyle = color;
+            ctx.fillRect(drawX, drawY, blockSize, blockSize);
+            ctx.strokeRect(drawX, drawY, blockSize, blockSize);
+          }
+        }
+      }
+    }
+
+    function updateScore(){
+      document.getElementById('score').innerText = score;
+    }
+
+    // 보드 초기화
+    function resetBoard(){
+      board = Array.from({length: boardHeight}, () => new Array(boardWidth).fill(0));
+      score = 0;
+      updateScore();
+    }
+
+    // 자동 드롭
+    function drop(){
+      if(isAnimating) return; // 애니메이션 중엔 정지
+      if(!collision(currentX, currentY+1, currentRotation)){
+        currentY++;
+      } else {
+        lockTetromino();
+        generateNewTetromino();
+        // 새 블록이 시작하자마자 충돌 => 게임 오버
+        if(collision(currentX, currentY, currentRotation)){
+          alert('
